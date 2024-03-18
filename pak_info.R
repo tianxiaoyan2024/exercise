@@ -47,7 +47,7 @@ demo(package="tidyverse")
 # return those that match the search
 help.search('tidyverse')
 
-??regression
+??tidyverse
 
 # Access the documentation of functions and data sets
 help(tidyverse)
