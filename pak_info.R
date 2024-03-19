@@ -71,6 +71,7 @@ library(help = "tidyverse")
 # ----------------------------------------------
 
 # Search for functions in all loaded packages that start with "tidyverse"
+library(tidyverse)
 functions <- ls("package:tidyverse")
 head(functions)
 
