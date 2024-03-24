@@ -40,6 +40,7 @@ pak::pkg_install("tidyverse")
 # --------------------------------------------
 # Vignettes Demonstrations
 # --------------------------------------------
+library(tidyverse)
 vignette("tidyverse")
 browseVignettes(package="tidyverse")
 demo(package="tidyverse")
@@ -86,3 +87,11 @@ ls("package:tidyverse")
 
 filtered_data <- dplyr::filter(iris, Sepal.Length > 5)
 print(filtered_data)
+
+surveys <- read_csv("data/portal_data_joined.csv")
+
+install.packages("systemfonts")
+install.packages("textshaping")
+```R
+install.packages("textshaping", dependencies = TRUE)
+sudo apt install libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev libfribidi-dev libharfbuzz-dev libtiff-dev libxml2-dev pandoc
