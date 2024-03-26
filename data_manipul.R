@@ -70,11 +70,14 @@ cat("Does the data frame have missing data?", any_missing_in_data)
 
 # 4) Extract values from a column or select/add a column
 
-# Extract values from a column (e.g., column "Name")
+# Extract values from a column (e.g., column "Age")
 
 library("tidyverse")  
-column_values <- df$Name
-print(df$Name)
+column_values1 <- df$Age
+print(df$Age)
+
+column_values2 <- df[,3]
+print(column_values2)
 
 # Select specific columns
 selected_data <- select(df, Age, Salary)
