@@ -13,7 +13,7 @@ rm(list = ls()) # Remove all variables
 
 # 1) Import and save data
 
-library(tidyverse)
+library(tidyverse) # Load the tidyverse package once at the beginning
 
 # Creating a sample data frame
 
@@ -29,7 +29,7 @@ print(df)
 # Save the dataframe as a xlsx file
 # Verify if the 'openxlsx' package is installed
 if (!requireNamespace("openxlsx", quietly = TRUE)) {
-  install.packages("openxlsx")# Install the 'openxlsx' package if it's not already installed
+  install.packages("openxlsx") # Install the 'openxlsx' package if it's not already installed
 }
 library("openxlsx") 
 
@@ -46,12 +46,11 @@ print(excel_data)
 write.csv(excel_data, "data/employees.csv")
 
 # 2) Inspect data structure
-
-# View the structure of the data frame
-
-csv_data <- read.csv("data/exployees.csv")  #Load data
+csv_data <- read.csv("data/employees.csv")  #Load data
 print(csv_data) 
 print(is.data.frame(csv_data)) 
+
+# View the structure of the data frame
 head(csv_data)
 str(csv_data)
 
@@ -65,6 +64,7 @@ any_missing <- any(is.na(df$Age))
 print(paste("Does 'Age' have missing data?", any_missing))
 
 # Check for missing values in the entire data frame
+
 any_missing_in_data <- any(is.na(df))
 cat("Does the data frame have missing data?", any_missing_in_data)
 
@@ -72,7 +72,7 @@ cat("Does the data frame have missing data?", any_missing_in_data)
 
 # Extract values from a column (e.g., column "Name")
 
-library("tidyverse")  # load the tidyverse packages, incl. dplyr
+library("tidyverse")  
 column_values <- df$Name
 print(df$Name)
 
@@ -85,7 +85,6 @@ df1 <- mutate(df, Total = Age + Salary)
 
 # 5) Transform a wider table to a long format
 
-library(tidyverse)
 long_df <- df %>%
   gather(key = "Category", value = "value", -ID, -Name) 
 str(long_df)
