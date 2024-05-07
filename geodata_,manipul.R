@@ -142,13 +142,13 @@ doubs_dem <- terra::rast("data/data-driven/doubs_dem.tif")
 doubs_dem_utm <- terra::project(doubs_dem,utm_crs)
 terra::crs(doubs_dem_utm)
 
-#Clip or intersect dem by doubs river
+# Clip or intersect dem by doubs river
 doubs_dem_utm_cropped <- crop(doubs_dem_utm, doubs_river_buff)
 doubs_dem_utm_masked <- mask(doubs_dem_cropped, doubs_river_buff)
 
 plot(doubs_dem_utm_masked,axes=TRUE)
 
-#Extracting raster values of points as predictors
+# Extracting raster values of points as predictors
 
 pak::pak("qgisprocess")
 qgis_configure()` 
@@ -156,9 +156,9 @@ library(qgisprocess)
 
 qgis_search_algorithms("wetness") %>% dplyr::select(provider_title,algorithm) %>% head(2)
 
-algorithms <- qgis_search_algorithms("wetness")
-#Note: result does not inherit from class data.frame ,so debug as fellows:
+#Note: result does not inherit from class data.frame , so as for debugging as fellows:
 
+algorithms <- qgis_search_algorithms("wetness")
 # Extract the provider title and algorithm name of the first two algorithms
 if (length(algorithms) > 0) {
   provider_titles <- sapply(algorithms[1:2], function(alg) alg$provider_title)
