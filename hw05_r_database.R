@@ -7,7 +7,6 @@
 # Author:     Xiaoyan Tian
 # Email:      xiaoyantian@mail.ustc.edu.cn
 # Date:       2024-04-10
-#第一版，还未精进，需修改！
 # --------------------------------------------
 
 cat("\014") #clears rhe console
