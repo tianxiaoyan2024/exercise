@@ -11,9 +11,9 @@
 
 cat("\014") # Clears the console
 rm(list = ls()) # Remove all variables
+# Step1 Uploading and clean data
 
-# Create timestamp and timeseries objects
-
+# Load packages and the data of Doubs
 
 library(tidyverse)
 library(lubridate) # manipulating dates
@@ -23,29 +23,32 @@ library(forecast) # work with ggplot2 for autoplot()
 library(ggplot2)
 library(timetk)
 
-# B) create timeseries
-
-# use ts() to create time series
-
 fish <- read.table('D:/中科大研一第二学期/数据驱动生态学/Prunier et al._RawBiomassData.txt',h=TRUE)
+
+# Data pre-processing 
+
 head(fish)
 anyNA(fish)
 
 any_missing <- any(is.na(data))
 print(paste("Does 'data' have missing data?", any_missing))
 
+# Remove the missing and duplicated data
 
 fish_clean <- fish |>
   drop_na() |>
-  distinct() # Identify and Remove Duplicate Data
+  distinct() 
 view(fish_clean)
 
+# Identify and count stations and species
 
-unique(fish_clean$STATION) # check stations
+unique(fish_clean$STATION) 
 table(fish_clean$STATION)
-unique(fish_clean$SP) # check stations
+unique(fish_clean$SP) 
 table(fish_clean$SP)
 
+
+# Step2 Create timeseries objects and visualization
 
 #Selecting the species of VAI which station is VERCah
 fish_selected <- aggregate(cbind(BIOMASS, DENSITY) ~ DATE,
@@ -53,7 +56,7 @@ fish_selected <- aggregate(cbind(BIOMASS, DENSITY) ~ DATE,
                                 FUN = mean)
 view(fish_selected)
 
-###method1
+# Method1--use ts() to create time series
 fish_ts1 = ts(data = fish_selected[,-1], 
              start = c(1994), 
              frequency = 1)  
@@ -65,43 +68,37 @@ library(forecast) # work with ggplot2 for autoplot()
 
 library(ggplot2)
 autoplot(fish_ts1, facets = TRUE) +
-  ggtitle("timeseries about density of VAI in Doubs river") +
+  ggtitle("timeseries about changes of VAI in Doubs river") +
   ylab("Changes") + xlab("Year")
 
-###Method2
-
-# use timetk() to create timeseries
+# Method2--use timetk() to create timeseries
 
 library(timetk)
 library(tidyverse)
 library(tsibble)
 
-
-# plot with timetk
-
 VERCah_VAI <- fish_clean |>
   subset(STATION=="VERCah" & SP == "VAI")
 
-fish_ts2 <- fish_clean |>
-  subset(STATION =="VERCah" & SP == "VAI") |>  
+fish_ts2 <- VERCah_VAI |>  
   tk_tbl()|>
   rename(date = DATE) |>
   pivot_longer( # convert to to long format
   cols = c("BIOMASS", "DENSITY")) |>
   group_by(name) |>
-  plot_time_series(date, value, 
+  plot_time_series(date, value, # plot with timetk
                    .facet_ncol = 2, 
                    .facet_scale = "free",
                    .interactive = FALSE,
-                   .title = "timeseries for VAI of Le Doubs river using timetk"
+                   .title = "timeseries for VAI of VERCah Station "
   )
 
 
-###########################################################
-# 02-Exploratory data analysis
-# A) missing imputation of timeseries objects
+#Step3 missing imputation of timeseries objects
+# Note: In order to generate lag and moving window feature, the timeseries must be continuous,
+# so the following step aims to linear imputation by "timetk"
 
-# Determining missing values with DataExplorer
+# 3.1 Determining missing values 
 
 library(DataExplorer)
 library(ggthemes)
@@ -123,7 +120,7 @@ fish_ts_miss |>
     title = "Visulaization of Missing Values"
   )
 
-# imputation of missing data
+# 3.2 Imputation of missing data
 
 fish_ts_imp <- fish_ts_miss |>
   mutate_at(vars(value), .funs = ts_impute_vec, period = 1) 
@@ -139,22 +136,8 @@ fish_ts_imp |>
 
 tail(fish_ts_imp)
 
-
-### 4. Anomalize: breakdown, identify, and clean in 1 easy step
-#Reference:https://search.r-project.org/CRAN/refmans/timetk/html/anomalize.html
-ts_anomalize_tbl <- ts_VERCah_VAI_density |>
-  anomalize(
-    .date_var      = DATE, 
-    .value         = DENSITY,
-    .iqr_alpha     = 0.05,
-    .max_anomalies = 0.20,
-    .message       = FALSE
-  )
-
-
-# B) Find the outlier in timeseries
-
-
+# 3.3Find the outlier in timeseries
+# Method1
 fish_ts_imp |>
   group_by(name) |>
   plot_anomaly_diagnostics(
@@ -167,15 +150,11 @@ fish_ts_imp |>
     .max_anomalies = 0.07, 
     .alpha = 0.05
   )
-
-
-library(ggplot2)
-library(ggtime)
-
-# 首先，我们需要计算异常值。这里假设你有一个名为`is_anomaly`的新列来标识异常值
+# Method2
+# Caculate the value of outlier
 fish_ts_imp$anomaly <- ifelse(fish_ts_imp$value > fish_ts_imp$value * 0.07, TRUE, FALSE)
 
-# 创建ggplot对象
+# Create object of ggplot
 p <- ggplot(fish_ts_imp, aes(x = date, y = value, color = factor(is_anomaly))) +
   geom_line(size = 1) +
   geom_point(data = filter(fish_ts_imp, is_anomaly), color = "#FF69B4", size = 3, alpha = 0.8) +
@@ -188,39 +167,32 @@ p <- ggplot(fish_ts_imp, aes(x = date, y = value, color = factor(is_anomaly))) +
   theme(plot.title = element_text(hjust = 0.5),
         axis.text.x = element_text(angle = 90, hjust = 1))
 
-# 显示图表
 print(p)
 
+# Step4 serial autocorrelation 
 
-
-# C) serial autocorrelation or ACF
-
+# Method1 
 fish_ts_imp |>
   group_by(name) |>
   plot_acf_diagnostics(
-    date, value,               # ACF & PACF
+    date, value,               
     .lags = "5 years",    
     .interactive = FALSE
   )
 
-
-
 fish_ts <- ts(fish_ts_imp$value, start = min(fish_ts_imp$date), frequency = 12)
-
-# 计算ACF和PACF
+# Method2
+# Caculate ACF and PACF
 acf_results <- auto.arima(fish_ts, lambda = NULL, ic = "aicc", trace = FALSE)$residuals
 acf_plot <- acf(acf_results, main = "ACF Plot", plot = FALSE)
 pacf_plot <- pacf(acf_results, main = "PACF Plot", plot = FALSE)
 
-# 绘制ACF和PACF
+# Plot ACF and PACF
 par(mfrow = c(1, 2))
 plot(acf_plot)
 plot(pacf_plot)
 
-
-
-#######################################################
-# 03- generating new features
+# Step5 generating new features
 
 library(tidyverse)
 library(tidymodels)
@@ -370,8 +342,7 @@ plot_time_series_regression(.date_var = DATE,
                             # BIOMASS_lag4_roll_6 + BIOMASS_lag7_roll_6,
                             .show_summary = TRUE)
 
-#######################################################
-# 04- machine learning for time series 
+# Step6 Machine learning for time series 
 # A) load packages and data
 
 library(tidyverse)  
