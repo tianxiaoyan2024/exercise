@@ -11,6 +11,8 @@
 
 cat("\014") # Clears the console
 rm(list = ls()) # Remove all variables
+
+
 # Step1 Uploading and clean data
 
 # Load packages and the data of Doubs
@@ -52,14 +54,14 @@ table(fish_clean$SP)
 
 #Selecting the species of VAI which station is VERCah
 fish_selected <- aggregate(cbind(BIOMASS, DENSITY) ~ DATE,
-                                subset(fish_clean, STATION == "VERCah" & SP == "VAI"),
-                                FUN = mean)
+                           subset(fish_clean, STATION == "VERCah" & SP == "VAI"),
+                           FUN = mean)
 view(fish_selected)
 
 # Method1--use ts() to create time series
 fish_ts1 = ts(data = fish_selected[,-1], 
-             start = c(1994), 
-             frequency = 1)  
+              start = c(1994), 
+              frequency = 1)  
 fish_ts1
 
 # Plot data with faceting
@@ -84,7 +86,7 @@ fish_ts2 <- VERCah_VAI |>
   tk_tbl()|>
   rename(date = DATE) |>
   pivot_longer( # convert to to long format
-  cols = c("BIOMASS", "DENSITY")) |>
+    cols = c("BIOMASS", "DENSITY")) |>
   group_by(name) |>
   plot_time_series(date, value, # plot with timetk
                    .facet_ncol = 2, 
@@ -95,8 +97,8 @@ fish_ts2 <- VERCah_VAI |>
 
 
 #Step3 missing imputation of timeseries objects
-# Note: In order to generate lag and moving window feature, the timeseries must be continuous,
-# so the following step aims to linear imputation by "timetk"
+# Note: In order to generate lag and moving window features, the timeseries must be continuous,
+# so the following step aims to execute linear imputation by "timetk"
 
 # 3.1 Determining missing values 
 
@@ -124,7 +126,7 @@ fish_ts_miss |>
 
 fish_ts_imp <- fish_ts_miss |>
   mutate_at(vars(value), .funs = ts_impute_vec, period = 1) 
-view(datatk_ts3)
+view(fish_ts_imp)
 
 fish_ts_imp |>
   plot_time_series(date, value, 
@@ -136,7 +138,7 @@ fish_ts_imp |>
 
 tail(fish_ts_imp)
 
-# 3.3Find the outlier in timeseries
+# 3.3 Find the outlier in timeseries
 # Method1
 fish_ts_imp |>
   group_by(name) |>
@@ -169,8 +171,8 @@ p <- ggplot(fish_ts_imp, aes(x = date, y = value, color = factor(is_anomaly))) +
 
 print(p)
 
-# Step4 serial autocorrelation 
 
+# Step4 Serial autocorrelation 
 # Method1 
 fish_ts_imp |>
   group_by(name) |>
@@ -181,6 +183,7 @@ fish_ts_imp |>
   )
 
 fish_ts <- ts(fish_ts_imp$value, start = min(fish_ts_imp$date), frequency = 12)
+
 # Method2
 # Caculate ACF and PACF
 acf_results <- auto.arima(fish_ts, lambda = NULL, ic = "aicc", trace = FALSE)$residuals
@@ -192,11 +195,11 @@ par(mfrow = c(1, 2))
 plot(acf_plot)
 plot(pacf_plot)
 
-# Step5 generating new features
+
+### Step5 Generating new features
 
 library(tidyverse)
 library(tidymodels)
-install.packages("modeltime")
 library(modeltime)
 library(timetk)
 library(lubridate)
@@ -210,8 +213,7 @@ VAI_ts |>
   tk_summary_diagnostics(.date_var = DATE)
 view(VAI_ts)
 
-##-----------------------------------------------
-# A) Calendar-based features
+## 5.1 Calendar-based features
 
 VAI_ts_features_Cal <- VAI_ts |>
   # Measure Transformation: variance reduction with Log(x+1)
@@ -226,14 +228,13 @@ VAI_ts_features_Cal
 
 # Perform linear regression    
 VAI_density_linear_cal <- timetk::plot_time_series_regression(.date_var = DATE,
-                                    .data = VAI_ts_features_Cal,
-                                    .formula = DENSITY ~ as.numeric(DATE) + index.num
-                                    + year + half + quarter + month + month.lbl,
-                                    .show_summary = TRUE)
+                                                              .data = VAI_ts_features_Cal,
+                                                              .formula = DENSITY ~ as.numeric(DATE) + index.num
+                                                              + year + half + quarter + month + month.lbl,
+                                                              .show_summary = TRUE)
 summary(VAI_density_linear_cal)
 
-##----------------------------------------------------
-# B) Fourier terms features
+## 5.2 Fourier terms features
 
 VAI_ts_features_Fourier <- VAI_ts |>
   # Measure Transformation: variance reduction with Log(x+1)
@@ -252,8 +253,7 @@ plot_time_series_regression(.date_var = DATE,
                               DATE_sin5_K1 + DATE_cos5_K1,
                             .show_summary = TRUE)
 
-##------------------------------------------------------------
-## C) Lag features
+## 5.3 Lag features
 
 VAI_ts_features_Lag <- VAI_ts |>
   # Measure Transformation: variance reduction with Log(x+1)
@@ -272,8 +272,7 @@ plot_time_series_regression(.date_var = DATE,
                               DENSITY_lag4 + DENSITY_lag7,
                             .show_summary = TRUE)
 
-##-----------------------------------------------------------
-## D) Moving window statistics
+## 5.4 Moving window statistics
 #Note discussed with Xin Ming--Taking the average of x1, x2, x3, ... using a sliding window means performing
 #a linear combination on x1, x2, x3, .... However,the purpose of constructing the model 
 #is to eliminate the correlation between the independent variables x. 
@@ -304,8 +303,7 @@ plot_time_series_regression(.date_var = DATE,
                             .show_summary = TRUE)
 
 
-##-------------------------------------------------------------
-## E) put all features together 
+## 5.5 Put all features together 
 
 VAI_ts_features_all <- VAI_ts |>
   mutate(DENSITY =  log1p(x = DENSITY)) |>
@@ -342,8 +340,9 @@ plot_time_series_regression(.date_var = DATE,
                             # BIOMASS_lag4_roll_6 + BIOMASS_lag7_roll_6,
                             .show_summary = TRUE)
 
-# Step6 Machine learning for time series 
-# A) load packages and data
+
+### Step6 Machine learning for time series 
+## 6.1 load packages and data
 
 library(tidyverse)  
 library(timetk) 
@@ -357,18 +356,17 @@ VERCah_VAI_ts <- VERCah_VAI |> # Convert to tibble
 
 VERCah_VAI_ml_ts |>
   plot_time_series(DATE, DENSITY,
-                    .facet_ncol  = NULL,
-                    .smooth      = TRUE,
-                    .interactive = TRUE,
-                    .title = "Biomass timeseries")
+                   .facet_ncol  = NULL,
+                   .smooth      = TRUE,
+                   .interactive = TRUE,
+                   .title = "DENSITY timeseries")
 
 library(tidyquant)
 ggplot(biomtk_ts, aes(x = DATE, y = VERCah_VAI)) +
   geom_line() +
   ggtitle("Density of VAI in Doubs")
 
-##---------------------------------------------------
-# B) Train/Test Splitting and creating features
+## 6.2 Train/Test Splitting and creating features
 
 n_rows <- nrow(VERCah_VAI_ts)
 train_rows <- round(0.7 * n_rows)
@@ -406,9 +404,8 @@ recipe_spec_final <- recipe(DENSITY ~ ., train_fish) |>
 
 summary(prep(recipe_spec_final))
 
-##---------------------------------------------------
-## C) training and evaluating models
-# 1) Training a boosted tree model
+## 6.3 training and evaluating models
+# a) Training a boosted tree model
 
 # Workflow
 bt <- workflow() |>
@@ -450,7 +447,7 @@ pbt <- ggplot() +
 bt_test |>
   metrics(VERCah_VAI_ts, .pred)
 
-## 2) training a random forest model
+# b) training a random forest model
 
 rf <- workflow() |>
   add_model(
@@ -494,9 +491,7 @@ rf_test |>
 library(patchwork)
 pbt + prf
 
-##-------------------------------------------------------
-# D) comparing among different algorithms
-
+## 6.4 Comparing among different algorithms
 # create a Modeltime Table
 
 model_tbl <- modeltime_table(
@@ -519,7 +514,6 @@ calibrated_tbl |>
   modeltime_accuracy(test_fish) |>
   arrange(rmse)
 
-##----------------------------------------------------------
 # Forecast Plot
 
 calibrated_tbl |>
@@ -534,8 +528,7 @@ calibrated_tbl |>
     .interactive        = TRUE
   )
 
-##--------------------------------------------------------
-# E) save the work
+## 6.5 Save the work
 
 workflow_Doubs <- list(
   
