@@ -235,6 +235,7 @@ VAI_density_linear_cal <- timetk::plot_time_series_regression(.date_var = date,
                                                               .show_summary = TRUE)
 summary(VAI_density_linear_cal)
 
+
 ## 5.2 Fourier terms features
 
 # Initialize empty data frame to store results
@@ -273,24 +274,131 @@ plot_time_series_regression(.date_var = DATE,
                             .show_summary = TRUE,
                             .color = "period")
 
+
+# Initialize empty data frame to store evaluation metrics
+VAI_ts_evaluations <- data.frame(periods = integer(0), 
+                                 r_squared = double(0), 
+                                 AIC = double(0))
+
+# Loop through different periods
+for (period in 1:5) {
+  augmented_data <- fish_ts_imp2 |>
+    # Variance reduction with Log(x+1)
+    mutate(DENSITY = log1p(x = DENSITY)) |>
+    # Standardization
+    mutate(DENSITY = standardize_vec(DENSITY)) |>
+    # Add Fourier features for current period
+    tk_augment_fourier(.date_var = DATE, .periods = period, .K = 1)
+  
+  # Append the augmented data to the combined data frame
+  VAI_ts_features_all <- bind_rows(VAI_ts_features_all, augmented_data)
+  
+  # Perform linear regression for the current period
+  fit <- lm(DENSITY ~ as.numeric(DATE) + DATE_sin + DATE_cos, data = augmented_data)
+  
+  # Extract R² and AIC
+  r_squared <- summary(fit)$r.squared
+  AIC_value <- AIC(fit)
+  
+  # Store evaluation metrics in the data frame
+  VAI_ts_evaluations <- rbind(VAI_ts_evaluations, data.frame(periods = period, 
+                                                             r_squared = r_squared, 
+                                                             AIC = AIC_value))
+}
+
+# Find the best periods based on R² or AIC
+best_period_r_squared <- VAI_ts_evaluations |>
+  arrange(desc(r_squared)) |>
+  slice(1) |>
+  pull(periods)
+
+best_period_AIC <- VAI_ts_evaluations |>
+  arrange(AIC) |>
+  slice(1) |>
+  pull(periods)
+
+# Print the best periods
+cat("The best period based on R² is:", best_period_r_squared, "\n")
+cat("The best period based on AIC is:", best_period_AIC, "\n")
+
+
 ## 5.3 Lag features
+library(timekit)
+library(tidyr)
+library(purrr)
+library(ggplot2)
 
-VAI_ts_features_Lag <- fish_ts_imp2 |>
-  # Measure Transformation: variance reduction with Log(x+1)
-  mutate(DENSITY =  log1p(x = DENSITY)) |>
-  # Measure Transformation: standardization
-  mutate(DENSITY =  standardize_vec(DENSITY)) |>
-  # Add lag features
-  tk_augment_lags(.value = DENSITY, .lags = c(4, 7))  
+# Define the range of lags you want to use
+lags_range <- 1:7
 
-VAI_ts_features_Lag
+# Create a new data frame with all lags
+VAI_ts_features_all_lags <- fish_ts_imp2 |>
+  # Variance reduction with Log(x+1)
+  mutate(DENSITY = log1p(x = DENSITY)) |>
+  # Standardization
+  mutate(DENSITY = standardize_vec(DENSITY))
 
-# Perform linear regression
-plot_time_series_regression(.date_var = DATE, 
-                            .data = VAI_ts_features_Lag,
-                            .formula = DENSITY ~ as.numeric(DATE) + 
-                              DENSITY_lag4 + DENSITY_lag7,
-                            .show_summary = TRUE)
+# Add all lag features
+for (lag in lags_range) {
+  VAI_ts_features_all_lags <- VAI_ts_features_all_lags |>
+    tk_augment_lags(.value = DENSITY, .lags = lag)
+}
+
+# Perform linear regression for each lag and store coefficients
+VAI_ts_features_all_lags <- VAI_ts_features_all_lags |>
+  mutate(
+    across(starts_with("DENSITY_lag"),
+           ~lm(DENSITY ~ as.numeric(DATE) + .x, data = .) %>% 
+             broom::tidy() %>% 
+             select(term = "DENSITY_lag", estimate = estimate) %>% 
+             pull(estimate),
+           .names = "{.col}_coeff")
+  )
+
+# Prepare data for plotting
+VAI_ts_features_plot <- VAI_ts_features_all_lags |>
+  pivot_longer(cols = starts_with("DENSITY_lag"),
+               names_to = c(".value", "lag"),
+               names_pattern = "DENSITY_lag(.*)_coeff",
+               values_transform = list(coeff = as.numeric))
+
+# Plot the regression lines for each lag
+ggplot(VAI_ts_features_plot, aes(x = DATE, y = DENSITY, group = lag)) +
+  geom_line(aes(color = lag, linetype = lag), size = 1) +
+  geom_point(alpha = 0.6) +
+  scale_color_manual(values = viridis::viridis_pal(option = "D")(length(lags_range))) +
+  labs(
+    title = "Linear Regression Curves for Different Lags",
+    x = "DATE",
+    y = "DENSITY",
+    color = "Lag",
+    linetype = "Lag"
+  ) +
+  theme_bw()
+
+# Perform linear regression for each lag and calculate R²
+VAI_ts_features_all_lags <- VAI_ts_features_all_lags |>
+  mutate(
+    across(starts_with("DENSITY_lag"),
+           ~lm(DENSITY ~ as.numeric(DATE) + .x, data = .) %>% 
+             broom::glance() %>% 
+             select(r.squared = r.squared),
+           .names = "{.col}_r_squared")
+  )
+
+# Calculate R² for each lag
+best_lag <- VAI_ts_features_all_lags |>
+  transmute(
+    lag = parse_number(str_sub(name, 11)),
+    r_squared = across(starts_with("DENSITY_lag_r_squared"), first)
+  ) |>
+  arrange(desc(r_squared)) |>
+  slice(1) |>
+  pull(lag)
+
+# Print the best lag
+cat("The best lag for the model is:", best_lag)
+
 
 ## 5.4 Moving window statistics
 #Note discussed with Xin Ming--Taking the average of x1, x2, x3, ... using a sliding window means performing
@@ -358,8 +466,8 @@ plot_time_series_regression(.date_var = DATE,
                             .show_summary = TRUE)
 
 
-### Step6 Machine learning for time series 
-## 6.1 load packages and data
+### Step6 Machine learning for time series learning on class
+## 6.1 Load necessary libraries for time series analysis and visualization
 
 library(tidyverse)  
 library(timetk) 
@@ -367,21 +475,28 @@ library(tidymodels)
 library(modeltime)
 library(timetk)
 
-VERCah_VAI_ts <- VERCah_VAI |> # Convert to tibble
-  tk_tbl() |> 
-  select(index, DATE, DENSITY) # keep date and target
+# Read data and convert it into a tidy format
+VERCah_VAI_ts <- VERCah_VAI |>
+  # Convert to a tibble (tidy data format)
+  tk_tbl() |>
+  # Keep only the date and target variable
+  select(index, DATE, DENSITY)
 
+# Visualize the time series data
 VERCah_VAI_ml_ts |>
   plot_time_series(DATE, DENSITY,
-                   .facet_ncol  = NULL,
-                   .smooth      = TRUE,
-                   .interactive = TRUE,
-                   .title = "DENSITY timeseries")
+                   .facet_ncol  = NULL,  # No faceting by columns
+                   .smooth      = TRUE,  # Apply smoothing for better visualization
+                   .interactive = TRUE,  # Enable interactive plot
+                   .title = "DENSITY timeseries") 
 
-library(tidyquant)
+library(tidyquant) 
+
+# Create a simple line plot using ggplot2
 ggplot(biomtk_ts, aes(x = DATE, y = VERCah_VAI)) +
-  geom_line() +
-  ggtitle("Density of VAI in Doubs")
+  geom_line() +  # Draw a line connecting the points
+  ggtitle("Density of VAI in Doubs")  
+
 
 ## 6.2 Train/Test Splitting and creating features
 
