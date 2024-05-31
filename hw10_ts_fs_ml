@@ -52,28 +52,28 @@ table(fish_clean$SP)
 
 # Step2 Create timeseries objects and visualization
 
-#Selecting the species of VAI which station is VERCah
+# Select the species of VAI which station is VERCah
+# Because there are 2 samples for the same dates, they are averaged after examination
 fish_selected <- aggregate(cbind(BIOMASS, DENSITY) ~ DATE,
                            subset(fish_clean, STATION == "VERCah" & SP == "VAI"),
                            FUN = mean)
 view(fish_selected)
 
-# Method1--use ts() to create time series
+# Method1 - Create a time series using the 'ts' function
 fish_ts1 = ts(data = fish_selected[,-1], 
               start = c(1994), 
-              frequency = 1)  
+              frequency = 1)  # Annual frequency, assuming one observation per year
 fish_ts1
 
-# Plot data with faceting
+# Plot the time series data focused on the density of VAI in Doubs river
 
-library(forecast) # work with ggplot2 for autoplot()
-
+library(forecast) # Load the 'forecast' package for using 'autoplot' function, which works well with ggplot2 for visualization
 library(ggplot2)
-autoplot(fish_ts1, facets = TRUE) +
+autoplot(fish_ts1) +
   ggtitle("timeseries about changes of VAI in Doubs river") +
   ylab("Changes") + xlab("Year")
 
-# Method2--use timetk() to create timeseries
+# Method2 - Create a time series using the 'timetk' function
 
 library(timetk)
 library(tidyverse)
@@ -81,24 +81,25 @@ library(tsibble)
 
 VERCah_VAI <- fish_clean |>
   subset(STATION=="VERCah" & SP == "VAI")
+view(VERCah_VAI)
 
 fish_ts2 <- VERCah_VAI |>  
-  tk_tbl()|>
+  tk_tbl()|> #Convert the data into a 'timetk' table,
   rename(date = DATE) |>
+  select(-BIOMASS)|>
   pivot_longer( # convert to to long format
-    cols = c("BIOMASS", "DENSITY")) |>
-  group_by(name) |>
-  plot_time_series(date, value, # plot with timetk
-                   .facet_ncol = 2, 
+    cols ="DENSITY") 
+view(fish_ts2)
+
+fish_timetk <- plot_time_series(fish_ts2,date, value, # plot with timetk
                    .facet_scale = "free",
                    .interactive = FALSE,
-                   .title = "timeseries for VAI of VERCah Station "
-  )
-
+                   .title = "timeseries for VAI of VERCah Station ")
+fish_timetk   
 
 #Step3 missing imputation of timeseries objects
-# Note: In order to generate lag and moving window features, the timeseries must be continuous,
-# so the following step aims to execute linear imputation by "timetk"
+# Note: In order to generate lag and moving window features, the timeseries must be continuous without missing data,
+# so the following step aims to execute linear imputation by "timetk" to fill in the gap
 
 # 3.1 Determining missing values 
 
@@ -107,11 +108,10 @@ library(ggthemes)
 
 fish_ts_miss <- 
   fish_ts2 |>
-  filter(name=="DENSITY") |>
   summarise_by_time(
     date, 
     .by = "year",
-    value = value ) |>
+    value = mean(value) ) |>
   pad_by_time(date, .by = "year")
 
 view(fish_ts_miss)
@@ -204,32 +204,28 @@ library(modeltime)
 library(timetk)
 library(lubridate)
 
-VAI_ts <- VERCah_VAI |>
-  tk_tbl() |> # Convert to tibble
-  select(DATE, DENSITY)
-
 # Check the regularity of the time series
 VAI_ts |>
   tk_summary_diagnostics(.date_var = DATE)
 view(VAI_ts)
 
 ## 5.1 Calendar-based features
-
-VAI_ts_features_Cal <- VAI_ts |>
+  
+VAI_ts_features_Cal <- fish_ts_imp |>
   # Measure Transformation: variance reduction with Log(x+1)
-  mutate(DENSITY =  log1p(x = DENSITY)) |>
+  mutate(DENSITY =  log1p(x = value)) |>
   # Measure Transformation: standardization
-  mutate(DENSITY =  standardize_vec(DENSITY)) |>
+  mutate(DENSITY =  standardize_vec(value)) |>
   # Add Calendar-based (or signature) features
-  tk_augment_timeseries_signature(.date_var = DATE) |>
+  tk_augment_timeseries_signature(.date_var = date) |>
   glimpse()
 
 VAI_ts_features_Cal
 
 # Perform linear regression    
-VAI_density_linear_cal <- timetk::plot_time_series_regression(.date_var = DATE,
+VAI_density_linear_cal <- timetk::plot_time_series_regression(.date_var = date,
                                                               .data = VAI_ts_features_Cal,
-                                                              .formula = DENSITY ~ as.numeric(DATE) + index.num
+                                                              .formula = value ~ as.numeric(date) + index.num
                                                               + year + half + quarter + month + month.lbl,
                                                               .show_summary = TRUE)
 summary(VAI_density_linear_cal)
