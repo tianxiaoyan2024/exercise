@@ -140,18 +140,19 @@ tail(fish_ts_imp)
 
 # 3.3 Find the outlier in timeseries
 # Method1
-fish_ts_imp |>
-  group_by(name) |>
   plot_anomaly_diagnostics(
+    .data = fish_ts_imp,
     .date = date,
     .value = value,
-    .facet_ncol = 2,
     .interactive=FALSE,
+    .message = TRUE,
     .title = "Anomaly Detection Report",
     .anom_color ="#00BFFF", 
-    .max_anomalies = 0.07, 
-    .alpha = 0.05
+    .max_anomalies = 0.07, #The maximum percent of anomalies permitted to be identified
+    .alpha = 0.08 #Controls the width of the "normal" range. Lower values are more conservative while higher values are less prone to incorrectly classifying "normal" observations.
   )
+#frequency = 5 observations per 5 years，trend = 10 observations per 10 years
+
 # Method2
 # Caculate the value of outlier
 fish_ts_imp$anomaly <- ifelse(fish_ts_imp$value > fish_ts_imp$value * 0.07, TRUE, FALSE)
