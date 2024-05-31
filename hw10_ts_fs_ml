@@ -133,8 +133,7 @@ fish_ts_imp |>
                    .facet_ncol = 2, 
                    .facet_scale = "free",
                    .interactive = FALSE,
-                   .title = "VAI of Le Doubs river"
-  ) 
+                   .title = "VAI of Le Doubs river") 
 
 tail(fish_ts_imp)
 
@@ -148,6 +147,7 @@ tail(fish_ts_imp)
     .message = TRUE,
     .title = "Anomaly Detection Report",
     .anom_color ="#00BFFF", 
+    .ribbon_alpha = 0.15, #Fill opacity for the acceptable range
     .max_anomalies = 0.07, #The maximum percent of anomalies permitted to be identified
     .alpha = 0.08 #Controls the width of the "normal" range. Lower values are more conservative while higher values are less prone to incorrectly classifying "normal" observations.
   )
@@ -155,7 +155,7 @@ tail(fish_ts_imp)
 
 # Method2
 # Caculate the value of outlier
-fish_ts_imp$anomaly <- ifelse(fish_ts_imp$value > fish_ts_imp$value * 0.07, TRUE, FALSE)
+fish_ts_imp2 <- fish_ts_imp$anomaly <- ifelse(fish_ts_imp$value > fish_ts_imp$value * 0.07, TRUE, FALSE)
 
 # Create object of ggplot
 p <- ggplot(fish_ts_imp, aes(x = date, y = value, color = factor(is_anomaly))) +
@@ -175,26 +175,28 @@ print(p)
 
 # Step4 Serial autocorrelation 
 # Method1 
-fish_ts_imp |>
-  group_by(name) |>
-  plot_acf_diagnostics(
+
+fish_acf_lag6 <- plot_acf_diagnostics(
+    fish_ts_imp,
     date, value,               
-    .lags = "5 years",    
+    .lags = "6 years",    
     .interactive = FALSE
   )
+fish_acf_lag6
 
 fish_ts <- ts(fish_ts_imp$value, start = min(fish_ts_imp$date), frequency = 12)
 
 # Method2
 # Caculate ACF and PACF
-acf_results <- auto.arima(fish_ts, lambda = NULL, ic = "aicc", trace = FALSE)$residuals
-acf_plot <- acf(acf_results, main = "ACF Plot", plot = FALSE)
-pacf_plot <- pacf(acf_results, main = "PACF Plot", plot = FALSE)
+acf_result <- acf(fish_ts_imp, type="correlation",
+                  main = "ACF Plot", 
+                  lag.max = 6,
+                  plot = FALSE)
+pacf_result <- pacf(fish_ts_imp, main = "PACF Plot", plot = FALSE)
 
 # Plot ACF and PACF
-par(mfrow = c(1, 2))
-plot(acf_plot)
-plot(pacf_plot)
+autoplot(acf_result) + ggtitle("Autocorrelation Function (ACF)")
+autoplot(pacf_result) + ggtitle("Partial Autocorrelation Function (PACF)")
 
 
 ### Step5 Generating new features
@@ -206,19 +208,21 @@ library(timetk)
 library(lubridate)
 
 # Check the regularity of the time series
-VAI_ts |>
-  tk_summary_diagnostics(.date_var = DATE)
+VAI_ts <- fish_ts_imp |>
+  tk_summary_diagnostics(.date_var = date)
 view(VAI_ts)
 
 ## 5.1 Calendar-based features
-  
-VAI_ts_features_Cal <- fish_ts_imp |>
+
+fish_ts_imp2 <- rename(fish_ts_imp,DENSITY=value,DATE=date)
+
+VAI_ts_features_Cal <- fish_ts_imp2 |>
   # Measure Transformation: variance reduction with Log(x+1)
-  mutate(DENSITY =  log1p(x = value)) |>
+  mutate(DENSITY =  log1p(x = DENSITY)) |>
   # Measure Transformation: standardization
-  mutate(DENSITY =  standardize_vec(value)) |>
+  mutate(DENSITY =  standardize_vec(DENSITY)) |>
   # Add Calendar-based (or signature) features
-  tk_augment_timeseries_signature(.date_var = date) |>
+  tk_augment_timeseries_signature(.date_var = DATE) |>
   glimpse()
 
 VAI_ts_features_Cal
@@ -233,26 +237,45 @@ summary(VAI_density_linear_cal)
 
 ## 5.2 Fourier terms features
 
-VAI_ts_features_Fourier <- VAI_ts |>
-  # Measure Transformation: variance reduction with Log(x+1)
-  mutate(DENSITY =  log1p(x = DENSITY)) |>
-  # Measure Transformation: standardization
-  mutate(DENSITY =  standardize_vec(DENSITY)) |>
-  # Add Fourier features
-  tk_augment_fourier(.date_var = DATE, .periods = 5, .K=1) 
+# Initialize empty data frame to store results
+VAI_ts_features_all <- data.frame()
 
-VAI_ts_features_Fourier
+# Loop through different periods and add Fourier features
+for (period in 1:5) {
+  augmented_data <- fish_ts_imp2 |>
+    # Variance reduction with Log(x+1)
+    mutate(DENSITY = log1p(x = DENSITY)) |>
+    # Standardization
+    mutate(DENSITY = standardize_vec(DENSITY)) |>
+    # Add Fourier features for current period
+    tk_augment_fourier(.date_var = DATE, .periods = period, .K = 1)
+  
+  # Append the augmented data to the combined data frame
+  VAI_ts_features_all <- bind_rows(VAI_ts_features_all, augmented_data)
+}
 
-# Perform linear regression
-plot_time_series_regression(.date_var = DATE, 
-                            .data = VAI_ts_features_Fourier,
+# Perform linear regression for each combination
+VAI_ts_features_all$period <- rownames(VAI_ts_features_all) # Add period column
+VAI_ts_features_all$DATE_sin <- paste0("DATE_sin", VAI_ts_features_all$period, "_K1")
+VAI_ts_features_all$DATE_cos <- paste0("DATE_cos", VAI_ts_features_all$period, "_K1")
+
+VAI_ts_features_all$fit <- purrr::map2_dbl(
+  VAI_ts_features_all$DATE_sin,
+  VAI_ts_features_all$DATE_cos,
+  ~lm(DENSITY ~ as.numeric(DATE) + .x + .y, data = VAI_ts_features_all)$coef[2:3]
+)
+
+# Plot all regressions
+plot_time_series_regression(.date_var = DATE,
+                            .data = VAI_ts_features_all,
                             .formula = DENSITY ~ as.numeric(DATE) + 
-                              DATE_sin5_K1 + DATE_cos5_K1,
-                            .show_summary = TRUE)
+                              DATE_sin + DATE_cos,
+                            .show_summary = TRUE,
+                            .color = "period")
 
 ## 5.3 Lag features
 
-VAI_ts_features_Lag <- VAI_ts |>
+VAI_ts_features_Lag <- fish_ts_imp2 |>
   # Measure Transformation: variance reduction with Log(x+1)
   mutate(DENSITY =  log1p(x = DENSITY)) |>
   # Measure Transformation: standardization
@@ -277,7 +300,7 @@ plot_time_series_regression(.date_var = DATE,
 #caused by the correlation of independent variables due to averaging, 
 #an algorithm that takes the maximum value is adopted.
 
-VAI_ts_features_Mvwin <- VAI_ts |>
+VAI_ts_features_Mvwin <- fish_ts_imp2 |>
   # Measure Transformation: variance reduction with Log(x+1)
   mutate(DENSITY =  log1p(x = DENSITY)) |>
   # Measure Transformation: standardization
@@ -302,7 +325,7 @@ plot_time_series_regression(.date_var = DATE,
 
 ## 5.5 Put all features together 
 
-VAI_ts_features_all <- VAI_ts |>
+VAI_ts_features_all <- fish_ts_imp2 |>
   mutate(DENSITY =  log1p(x = DENSITY)) |>
   mutate(DENSITY =  standardize_vec(DENSITY)) |>
   # Add Calendar-based (or signature) features
@@ -331,10 +354,7 @@ plot_time_series_regression(.date_var = DATE,
                             .formula = DENSITY ~ as.numeric(DATE) + 
                               index.num + year + half + quarter + month + 
                               DATE_sin5_K1 + DATE_sin5_K1 + 
-                              # BIOMASS_lag4 + BIOMASS_lag7 + 
-                              BDENSITY_roll_3 + DENSITY_roll_6,
-                            # BIOMASS_lag4_roll_3 + BIOMASS_lag7_roll_3 + 
-                            # BIOMASS_lag4_roll_6 + BIOMASS_lag7_roll_6,
+                              DENSITY_roll_3 + DENSITY_roll_6,
                             .show_summary = TRUE)
 
 
